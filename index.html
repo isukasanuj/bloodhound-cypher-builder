@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BloodHound Cypher Builder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: checklist rail on the left (walk it top to bottom), builder on the right: question, options, query, caveats, live checks. */
+:root{
+  --bg:#f3f5f8; --surface:#ffffff; --ink:#18212d; --muted:#5a6575; --line:#dbe0e8;
+  --accent:#2c56c9; --accent-soft:#e6ecfb; --accent-ink:#ffffff;
+  --code-bg:#f7f8fb; --code-ink:#1d2633; --k:#2c56c9; --e:#8a3aa8; --s:#9a4d00; --f:#0f7a6c; --c:#7b8594;
+  --warn:#8a5a00; --warn-bg:#fff6e0; --ok:#1d7a46;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f141b; --surface:#161d27; --ink:#e2e7ee; --muted:#96a1b2; --line:#283343;
+    --accent:#86a2ff; --accent-soft:#1d2a47; --accent-ink:#0f141b;
+    --code-bg:#0c1118; --code-ink:#d9dfe8; --k:#86a2ff; --e:#d49ae8; --s:#e8b06a; --f:#5fd1bd; --c:#7d8899;
+    --warn:#f0c46a; --warn-bg:#2a2414; --ok:#62cf8f; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f141b; --surface:#161d27; --ink:#e2e7ee; --muted:#96a1b2; --line:#283343;
+  --accent:#86a2ff; --accent-soft:#1d2a47; --accent-ink:#0f141b;
+  --code-bg:#0c1118; --code-ink:#d9dfe8; --k:#86a2ff; --e:#d49ae8; --s:#e8b06a; --f:#5fd1bd; --c:#7d8899;
+  --warn:#f0c46a; --warn-bg:#2a2414; --ok:#62cf8f; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3{text-wrap:balance;margin:0;font-weight:600}
+h1{font-size:1.45rem;letter-spacing:-.01em}
+h2{font-size:1.3rem;letter-spacing:-.01em}
+h3{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+p{margin:0}
+code,.mono{font-family:var(--mono)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px}
+.top .sub{color:var(--muted);max-width:68ch;margin-top:4px}
+.top-ctl{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.lbl{font-size:.8rem;color:var(--muted)}
+select,input[type=text]{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 10px;min-width:0}
+input[type=text]{font-family:var(--mono);font-size:.9rem}
+.btn{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 12px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:500}
+
+.app{display:grid;grid-template-columns:290px minmax(0,1fr);gap:18px;align-items:start}
+.rail{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 10px;position:sticky;top:max(12px,env(safe-area-inset-top,0px));max-height:calc(100vh - 32px);overflow:auto}
+.rail .hint{font-size:.8rem;color:var(--muted);padding:0 6px 10px}
+.progress{font-size:.8rem;color:var(--muted);padding:0 6px 10px;font-variant-numeric:tabular-nums}
+.cat{display:flex;flex-direction:column;gap:2px;margin-bottom:12px}
+.cat h3{padding:4px 6px}
+.item{display:grid;grid-template-columns:20px minmax(0,1fr);gap:6px;align-items:start;border-radius:6px;padding:5px 6px}
+.item:hover{background:var(--accent-soft)}
+.item.on{background:var(--accent-soft)}
+.item.on .name{color:var(--accent);font-weight:600}
+.item input{margin:4px 0 0;accent-color:var(--ok)}
+.item button{all:unset;cursor:pointer;display:block;min-width:0}
+.item button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.item .name{font-size:.92rem;line-height:1.3}
+.item.done .name{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line)}
+
+.work{display:flex;flex-direction:column;gap:14px;min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;min-width:0}
+.head .eyebrow{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.head .q{margin-top:6px;color:var(--muted);max-width:75ch}
+.edges{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.edge{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:4px 12px;font-size:.9rem;align-items:baseline}
+.edge code{color:var(--e);font-weight:500;overflow-wrap:anywhere}
+.edge.two code::after{content:"two-step";font-family:var(--sans);font-size:.7rem;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:8px;vertical-align:1px}
+.edge.off{opacity:.45}
+.edge span{color:var(--muted)}
+
+.opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px 18px}
+.opt{display:flex;flex-direction:column;gap:6px;min-width:0}
+.opt[hidden]{display:none!important}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.seg label{border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:.88rem;background:var(--surface)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label:has(input:checked){border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:500}
+.seg label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:1px}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:.9rem}
+.chk input{margin-top:4px;accent-color:var(--accent)}
+.optnote{font-size:.8rem;color:var(--muted)}
+
+.qhead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+.where{font-size:.85rem;color:var(--muted)}
+.where b{color:var(--ink);font-weight:500}
+pre.q{margin:0;background:var(--code-bg);color:var(--code-ink);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.86rem;line-height:1.6;white-space:pre}
+.q .k{color:var(--k);font-weight:500}.q .e{color:var(--e)}.q .s{color:var(--s)}.q .f{color:var(--f)}.q .c{color:var(--c)}
+.warnline{margin-top:10px;font-size:.85rem;color:var(--warn);background:var(--warn-bg);border-radius:6px;padding:8px 10px}
+
+.split{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+ul.blind{margin:10px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.cmds{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.cmd{display:flex;flex-direction:column;gap:4px;min-width:0}
+.cmd .row{display:flex;gap:6px;align-items:stretch;min-width:0}
+.cmd pre{margin:0;flex:1;min-width:0;overflow-x:auto;background:var(--code-bg);border:1px solid var(--line);border-radius:6px;padding:7px 10px;font-family:var(--mono);font-size:.8rem;white-space:pre}
+.cmd .note{font-size:.82rem;color:var(--muted)}
+.cmd .btn{padding:4px 9px;font-size:.8rem}
+.vars{font-size:.82rem;color:var(--muted);margin-top:6px}
+.vars code{font-size:.78rem}
+table.ng{width:100%;border-collapse:collapse;font-size:.9rem;margin-top:10px}
+table.ng th,table.ng td{text-align:left;padding:8px 10px;border-top:1px solid var(--line);vertical-align:top}
+table.ng th{font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.tw{overflow-x:auto}
+.toast{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:.88rem;opacity:0;transition:opacity .15s;pointer-events:none}
+.toast.show{opacity:1}
+@media (max-width:860px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .rail{position:static;max-height:46vh}
+  .edge{grid-template-columns:minmax(0,1fr)}
+}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+
+/* Task-focused workspace */
+[hidden]{display:none!important}
+body{margin:0;padding-top:28px}
+.wrap{max-width:1480px;gap:24px}
+.top{align-items:center;padding-bottom:22px;border-bottom:1px solid var(--line)}
+h1{font-size:1.7rem;letter-spacing:-.045em}.top .sub{max-width:65ch;font-size:.92rem}
+.brand-label{color:var(--accent);font:500 .72rem var(--mono);letter-spacing:.12em;margin-bottom:7px}
+.app{grid-template-columns:280px minmax(0,1fr);gap:24px}
+.rail{padding:18px 12px;border-radius:14px}.rail-tools{padding:0 6px 14px;display:grid;gap:10px}
+.rail-tools input{width:100%;font-family:var(--sans)}
+.rail-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.rail-title strong{font-size:1rem}.key{font: .75rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--muted)}
+.progress{padding-bottom:5px}progress{width:100%;height:5px;accent-color:var(--accent);margin-bottom:14px}
+.item{padding:9px 7px;align-items:center}.item input{width:17px;height:17px;margin:0}.item button{padding:3px 0}.cat h3{padding-top:14px}
+.work{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.92fr);gap:18px;align-items:start}
+.head{grid-column:1/-1}.card{border-radius:14px;padding:22px}
+.head h2{font-size:1.6rem;letter-spacing:-.025em}.head .q{max-width:85ch}
+.step{color:var(--accent);font:500 .72rem var(--mono);letter-spacing:.08em;margin-bottom:10px;text-transform:uppercase}
+.section-heading{font-size:1.1rem;margin-bottom:18px}.opts{grid-template-columns:minmax(0,1fr);gap:20px}
+.lbl{font-weight:500;color:var(--ink);font-size:.85rem}.seg label{padding:9px 11px}.btn{min-height:40px;border-radius:8px}.btn:disabled{opacity:.45;cursor:not-allowed}
+input[type=text],select{min-height:42px;border-radius:8px}
+.query-card{position:sticky;top:18px;border-top:3px solid var(--accent)}
+.query-card .qhead{align-items:flex-start}.query-card pre.q{max-height:440px;font-size:.8rem}
+.query-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.query-actions .primary{flex:1}
+.query-summary{color:var(--muted);font-size:.83rem;margin-bottom:12px;overflow-wrap:anywhere}
+.where{margin-top:14px;font-size:.82rem}.split{grid-column:1/-1;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+summary{cursor:pointer;font-weight:500}details summary::marker{color:var(--accent)}
+.edge-details{margin-top:16px;border-top:1px solid var(--line);padding-top:12px;font-size:.86rem}.edges{margin-top:12px}
+.completion{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--accent-soft);border-radius:12px;padding:16px 20px}
+.completion p{font-size:.83rem;color:var(--muted)}.empty{padding:20px 8px;color:var(--muted);font-size:.9rem}
+.skip{position:absolute;left:16px;top:-100px;background:var(--surface);padding:12px;z-index:10}.skip:focus{top:8px}
+#infoView{display:block}.toast{z-index:20;max-width:calc(100vw - 32px)}
+@media(min-width:1500px){.opts{grid-template-columns:1fr}}
+@media(max-width:1100px){.work{grid-template-columns:minmax(0,1fr)}.query-card{position:static}.split{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:860px){body{padding-top:16px}.app{grid-template-columns:minmax(0,1fr)}.rail{max-height:none}.rail #rail{max-height:230px;overflow:auto}.top-ctl{width:100%}.top-ctl select{flex:1}.card{padding:18px}.completion{flex-wrap:wrap}.head h2{font-size:1.35rem}}
+
+</style>
+</head>
+<body>
+<a class="skip" href="#work">Skip to builder</a>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="brand-label">BLOODHOUND / QUERY WORKSPACE</p><h1>Find the right query. Faster.</h1>
+      <p class="sub">Choose a check, narrow the scope, and copy your Cypher into BloodHound. Your settings and checklist are saved in this browser.</p>
+    </div>
+    <div class="top-ctl">
+      <label class="lbl" for="edition">BloodHound</label>
+      <select id="edition">
+        <option value="ce7">CE v7 or newer</option>
+        <option value="ce6">CE before v7</option>
+        <option value="legacy">Legacy 4.x</option>
+      </select>
+      <button class="btn" id="themeToggle" type="button" aria-label="Switch color theme">Theme: system</button><button class="btn" id="downloadPack" type="button">Download queries</button><button class="btn" id="copyAll" type="button">Copy all queries</button>
+    </div>
+  </header>
+
+  <div class="app">
+    <nav class="rail" aria-label="Checks">
+      <div class="rail-tools"><div class="rail-title"><strong>1. Choose a check</strong><span class="key">/</span></div><label class="lbl" for="checkSearch">Search checks or rights</label><input type="text" id="checkSearch" placeholder="Try RBCD, LAPS, GenericAll…" autocomplete="off"><label class="chk"><input type="checkbox" id="pendingOnly">Show unfinished only</label></div>
+      <p class="progress" id="progress"></p>
+      <progress id="progressBar" aria-label="Checks completed" value="0" max="1"></progress><div id="rail"></div>
+    </nav>
+
+    <main class="work" id="work" tabindex="-1">
+      <section class="card head">
+        <p class="eyebrow" id="pCat"></p>
+        <h2 id="pTitle"></h2>
+        <p class="q" id="pQ"></p>
+        <details class="edge-details"><summary>How this query works · properties &amp; rights</summary><div class="edges" id="pEdges"></div></details>
+      </section>
+
+      <section class="card" id="optCard"><p class="step">Step 2</p><h2 class="section-heading">Set your scope</h2>
+        <div class="opts">
+          <div class="opt" id="o-source">
+            <span class="lbl">Start from</span>
+            <div class="seg" role="radiogroup" aria-label="Who">
+              <label><input type="radio" name="source" id="src-users" value="users">All users + their groups</label>
+              <label><input type="radio" name="source" id="src-any" value="any">Direct rights holders</label>
+              <label><input type="radio" name="source" id="src-named" value="named">Specific user or computer</label>
+              <label><input type="radio" name="source" id="src-owned" value="owned">Marked as owned</label>
+            </div>
+          </div>
+          <div class="opt" id="o-name">
+            <label class="lbl" for="name">Principal name</label>
+            <input type="text" id="name" aria-describedby="nameHelp" placeholder="jdoe, PC01, or jdoe@corp.local" autocomplete="off" spellcheck="false">
+            <span class="optnote" id="nameHelp">Case doesn't matter. The domain suffix is optional. * is a wildcard.</span>
+          </div>
+          <div class="opt" id="o-output">
+            <span class="lbl">Output</span>
+            <div class="seg" role="radiogroup" aria-label="Output">
+              <label><input type="radio" name="output" id="out-table" value="table">Table</label>
+              <label><input type="radio" name="output" id="out-graph" value="graph">Graph</label>
+              <label><input type="radio" name="output" id="out-count" value="count">Counts</label>
+            </div>
+          </div>
+          <div class="opt" id="o-group">
+            <span class="lbl">One row per</span>
+            <div class="seg" role="radiogroup" aria-label="Rows">
+              <label><input type="radio" name="groupBy" id="gb-principal" value="principal">Principal</label>
+              <label><input type="radio" name="groupBy" id="gb-target" value="target">Target</label>
+            </div>
+          </div>
+          <div class="opt" id="o-target">
+            <label class="lbl" for="targetGlob" id="targetLbl">Limit targets to</label>
+            <input type="text" id="targetGlob" placeholder="blank = all, or PC*" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="opt" id="o-noise">
+            <label class="lbl" for="noise">Hide expected holders</label>
+            <select id="noise">
+              <option value="sids">Built-in admin groups and DCs</option>
+              <option value="tier0">Everything tagged Tier Zero</option>
+              <option value="off">Show everyone</option>
+            </select>
+          </div>
+          <div class="opt" id="o-flags">
+            <span class="lbl">Include</span>
+            <label class="chk" id="f-two"><input type="checkbox" id="twoStep"><span>Two-step rights (WriteDacl, WriteOwner, Owns)</span></label>
+            <label class="chk"><input type="checkbox" id="enabledOnly"><span>Enabled accounts only</span></label>
+            <label class="chk" id="f-laps"><input type="checkbox" id="lapsOnly"><span>Only computers flagged with LAPS</span></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="card query-card"><p class="step">Step 3</p><div class="qhead"><h2 class="section-heading">Your query</h2><button class="btn" id="resetOptions" type="button">Reset options</button></div><p class="query-summary" id="querySummary"></p>
+        <div hidden>
+          <p class="where" id="where"></p>
+          
+        </div>
+        <pre class="q" id="query"></pre>
+        <p class="warnline" id="qwarn" role="status" hidden></p><div class="query-actions"><button class="btn primary" id="copyQ" type="button">Copy query</button><button class="btn" id="downloadQ" type="button">Save .cypher</button></div><p class="where" id="pasteHelp"></p>
+      </section>
+
+      <div class="completion"><div><strong>Run it in BloodHound, then mark it complete.</strong><p>Completion tracks your review; it does not validate the results.</p></div><button class="btn" id="completeNext" type="button">Mark done &amp; next →</button></div><div class="split">
+        <section class="card">
+          <h3>What the graph can't tell you</h3>
+          <ul class="blind" id="blind"></ul>
+        </section>
+        <section class="card">
+          <h3>Follow-up commands</h3>
+          <p class="vars">Set once in your shell: <code>export DC=10.0.0.10 DOMAIN=corp.local USER=jdoe PASS='…'</code>. On Kali, Impacket scripts are <code>impacket-name</code>; elsewhere <code>name.py</code>.</p>
+          <div class="cmds" id="cmds"></div>
+        </section>
+      </div>
+    </main>
+
+    <main class="work" id="infoView" hidden>
+      <section class="card head">
+        <p class="eyebrow">Outside the graph</p>
+        <h2>Checks BloodHound can't answer</h2>
+        <p class="q">SharpHound doesn't collect these, so no Cypher query will find them. Run them live on every foothold.</p>
+        <div class="tw">
+          <table class="ng">
+            <thead><tr><th>Question</th><th>Check</th></tr></thead>
+            <tbody id="ngBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script id="cqb-engine">
+(function (root) {
+  // RIDs and well-known SIDs whose rights are expected: Enterprise DCs (S-1-5-9), SYSTEM (S-1-5-18),
+  // Enterprise RODCs 498, Administrator 500, Domain Admins 512, Domain Controllers 516, Schema Admins 518,
+  // Enterprise Admins 519, Key Admins 526, Enterprise Key Admins 527, Administrators 544, Account Operators 548.
+  var ADMIN_RID_RE = '.*-(9|18|498|500|512|516|518|519|526|527|544|548)$';
+  // Domain Admins, Enterprise Admins, Administrators.
+  var TZ_GROUP_RE = '.*-(512|519|544)$';
+  var TWO_STEP = ['WriteDacl', 'WriteOwner', 'Owns'];
+  // AD traversable edges from the BloodHound CE edge reference.
+  var TRAVERSABLE = ['MemberOf', 'HasSession', 'AdminTo', 'CanRDP', 'CanPSRemote', 'ExecuteDCOM', 'SQLAdmin',
+    'AllowedToDelegate', 'AllowedToAct', 'AddAllowedToAct', 'WriteAccountRestrictions', 'GenericAll', 'GenericWrite',
+    'WriteDacl', 'WriteOwner', 'Owns', 'OwnsLimitedRights', 'WriteOwnerLimitedRights', 'AllExtendedRights',
+    'ForceChangePassword', 'AddMember', 'AddSelf', 'AddKeyCredentialLink', 'WriteSPN', 'ReadLAPSPassword',
+    'SyncLAPSPassword', 'ReadGMSAPassword', 'DumpSMSAPassword', 'DCSync', 'Contains', 'GPLink', 'WriteGPLink',
+    'HasSIDHistory', 'CoerceToTGT', 'AbuseTGTDelegation', 'WriteAltSecurityIdentities', 'WritePublicInformation',
+    'ADCSESC1', 'ADCSESC3', 'ADCSESC4', 'ADCSESC6a', 'ADCSESC6b', 'ADCSESC9a', 'ADCSESC9b', 'ADCSESC10a',
+    'ADCSESC10b', 'ADCSESC13', 'GoldenCert', 'ManageCA', 'ManageCertificates', 'CoerceAndRelayNTLMToSMB',
+    'CoerceAndRelayNTLMToLDAP', 'CoerceAndRelayNTLMToLDAPS', 'CoerceAndRelayNTLMToADCS', 'ClaimSpecialIdentity',
+    'SameForestTrust', 'CrossForestTrust', 'SpoofSIDHistory', 'HasTrustKeys', 'DCFor'];
+  var ALL_CONTROL = ['GenericAll', 'GenericWrite', 'WriteDacl', 'WriteOwner', 'Owns', 'AllExtendedRights',
+    'ForceChangePassword', 'AddMember', 'AddSelf', 'AddKeyCredentialLink', 'WriteSPN', 'WriteAccountRestrictions',
+    'AddAllowedToAct', 'ReadLAPSPassword', 'SyncLAPSPassword', 'ReadGMSAPassword', 'WriteGPLink', 'DCSync',
+    'WriteAltSecurityIdentities', 'WritePublicInformation'];
+
+  var EDGE_INFO = {
+    GenericAll: 'Full control of the object.',
+    GenericWrite: 'Write any non-protected attribute.',
+    WriteAccountRestrictions: 'Write the Account Restrictions property set, which includes the RBCD attribute.',
+    AddAllowedToAct: 'Write msDS-AllowedToActOnBehalfOfOtherIdentity itself.',
+    AddKeyCredentialLink: 'Write msDS-KeyCredentialLink.',
+    ForceChangePassword: 'Reset the password without knowing the old one.',
+    AllExtendedRights: 'All extended rights: password reset on users, LAPS read on computers, replication on the domain.',
+    WriteSPN: 'Write servicePrincipalName.',
+    AddMember: 'Add any principal to the group.',
+    AddSelf: 'Add yourself to the group.',
+    WriteGPLink: 'Write gPLink on an OU or domain.',
+    DCSync: 'Holds both replication rights (GetChanges and GetChangesAll).',
+    ReadLAPSPassword: 'Read the LAPS password attribute.',
+    SyncLAPSPassword: 'Pull confidential attributes, including LAPS, through DirSync.',
+    ReadGMSAPassword: 'Retrieve the gMSA password blob.',
+    WriteDacl: 'Grant yourself any right first, then use it.',
+    WriteOwner: 'Make yourself owner, then grant yourself the right.',
+    Owns: 'Owners can rewrite the DACL, then grant themselves the right.',
+    AllowedToAct: 'Already listed in msDS-AllowedToActOnBehalfOfOtherIdentity.',
+    AllowedToDelegate: 'Constrained delegation to a service on the target.',
+    AdminTo: 'Local administrator.',
+    CanRDP: 'Allowed to log on through RDP.',
+    CanPSRemote: 'Allowed to use WinRM.',
+    ExecuteDCOM: 'Member of Distributed COM Users.',
+    SQLAdmin: 'SQL Server sysadmin.',
+    WriteAltSecurityIdentities: 'Write altSecurityIdentities (ESC14).',
+    WritePublicInformation: 'Write the Public Information property set.',
+    CoerceAndRelayNTLMToSMB: 'Coerce the host and relay to SMB without signing.',
+    CoerceAndRelayNTLMToLDAP: 'Coerce the host and relay to LDAP without signing.',
+    CoerceAndRelayNTLMToLDAPS: 'Coerce the host and relay to LDAPS without channel binding.',
+    CoerceAndRelayNTLMToADCS: 'Coerce the host and relay to AD CS web enrollment.',
+    ADCSESC1: 'Enroll in a template that lets you supply the subject.',
+    ADCSESC3: 'Enrollment agent abuse.',
+    ADCSESC4: 'Write access to a certificate template.',
+    ADCSESC6a: 'EDITF_ATTRIBUTESUBJECTALTNAME2 on the CA, no strong mapping.',
+    ADCSESC6b: 'EDITF_ATTRIBUTESUBJECTALTNAME2 on the CA, UPN mapping.',
+    ADCSESC9a: 'No security extension, write the UPN of a victim.',
+    ADCSESC9b: 'No security extension, write the dNSHostName of a victim.',
+    ADCSESC10a: 'Weak certificate mapping, UPN variant.',
+    ADCSESC10b: 'Weak certificate mapping, dNSHostName variant.',
+    ADCSESC13: 'Issuance policy linked to a group.',
+    GoldenCert: 'Control of a CA host lets you forge certificates.'
+  };
+
+  var C = function (cmd, note) { return { cmd: cmd, note: note }; };
+  var BH = 'bloodyAD --host $DC -d $DOMAIN -u $USER -p "$PASS"';
+  var NXL = 'nxc ldap $DC -u $USER -p "$PASS"';
+  var IMP = '-dc-ip $DC "$DOMAIN/$USER:$PASS"';
+
+  var P = [
+    { id: 'kerberoast', cat: 'Accounts to attack', title: 'Kerberoastable users',
+      q: 'Which enabled users have an SPN, so anyone can request a crackable service ticket for them?',
+      kind: 'prop', label: 'User', where: ['n.hasspn = true', "NOT n.objectid ENDS WITH '-502'"],
+      cols: [['n.name', 'user'], ['n.admincount', 'admincount'], ['n.serviceprincipalnames', 'spns']], order: 'admincount DESC', countAs: 'users',
+      blind: ['Whether the password is weak enough to crack.', 'Accounts set to AES only produce slower hashes.'],
+      confirm: [C(NXL + ' --kerberoasting kerberoast.txt', 'Requests the tickets and writes hashes for hashcat.')] },
+    { id: 'asrep', cat: 'Accounts to attack', title: 'AS-REP roastable users',
+      q: 'Which enabled users have Kerberos pre-authentication turned off?',
+      kind: 'prop', label: 'User', where: ['n.dontreqpreauth = true'],
+      cols: [['n.name', 'user'], ['n.admincount', 'admincount']], order: 'admincount DESC', countAs: 'users',
+      blind: ['Whether the password is weak enough to crack.'],
+      confirm: [C(NXL + ' --asreproast asrep.txt', 'Writes AS-REP hashes for hashcat.')] },
+    { id: 'pwdnotreqd', cat: 'Accounts to attack', title: 'Password not required',
+      q: 'Which enabled users have PASSWD_NOTREQD set, so they may have an empty password?',
+      kind: 'prop', label: 'User', where: ['n.passwordnotreqd = true'],
+      cols: [['n.name', 'user'], ['n.admincount', 'admincount']], order: 'admincount DESC', countAs: 'users',
+      blind: ['The flag allows an empty password. It doesn\u2019t prove the password is empty.', 'Read the lockout policy before testing even one blank password per account.'],
+      confirm: [C(NXL + ' --password-not-required', 'Lists the same flag straight from LDAP.')] },
+    { id: 'desc', cat: 'Accounts to attack', title: 'Passwords in descriptions',
+      q: 'Which users have something that looks like a password in their description or a password attribute set?',
+      kind: 'prop', label: 'User',
+      where: ["(n.description =~ '(?is).*(pass|pwd|cred|secret|kennwort|\u30d1\u30b9\u30ef\u30fc\u30c9).*' OR n.userpassword IS NOT NULL OR n.unixpassword IS NOT NULL)"],
+      cols: [['n.name', 'user'], ['n.description', 'description']], order: 'user', countAs: 'users',
+      blind: ['Free text in other attributes (info, comment) isn\u2019t collected.', 'Scripts and GPP files in SYSVOL are outside the graph.'],
+      confirm: [C('nxc smb $DC -u $USER -p "$PASS" -M gpp_password', 'Looks for cpassword in SYSVOL Group Policy Preferences.')] },
+
+    { id: 'rbcd', cat: 'Take over an object', title: 'Configure RBCD on a computer',
+      q: 'Who can write msDS-AllowedToActOnBehalfOfOtherIdentity on a computer and take it over with resource-based constrained delegation?',
+      kind: 'acl', targets: ['Computer'], edges: ['GenericAll', 'GenericWrite', 'WriteAccountRestrictions', 'AddAllowedToAct'], twoStep: true,
+      blind: ['You also need an account with an SPN, usually a computer account you create. MachineAccountQuota isn\u2019t in the graph, so check it live.',
+        'The user you impersonate must allow delegation: not in Protected Users and not marked sensitive. Run "Admins that can be impersonated".',
+        'The ticket gives admin on that one computer. It doesn\u2019t give domain admin rights.'],
+      confirm: [C(BH + ' get writable --otype computer --right WRITE --detail', 'Look for msDS-AllowedToActOnBehalfOfOtherIdentity under each computer.'),
+        C("impacket-dacledit -action read -target 'PC01$' " + IMP, 'Reads one computer\u2019s DACL. Keep the $ on the account name.'),
+        C(NXL + ' -M maq', 'Shows MachineAccountQuota, which decides whether you can create the computer account you need.')] },
+    { id: 'shadow', cat: 'Take over an object', title: 'Shadow Credentials',
+      q: 'Who can add a key to msDS-KeyCredentialLink on a user or computer and then authenticate as it with PKINIT?',
+      kind: 'acl', targets: ['User', 'Computer'], edges: ['AddKeyCredentialLink', 'GenericAll', 'GenericWrite'], twoStep: true,
+      blind: ['PKINIT has to work: a DC with a certificate (usually from AD CS) and a Server 2016 or newer DC.', 'Self-edges are left out. A computer can only write its own key when none exists.'],
+      confirm: [C(BH + ' get writable --otype user --right WRITE --detail', 'Look for msDS-KeyCredentialLink. The user class also matches computers.'),
+        C(NXL + ' -M adcs', 'Lists enterprise CAs. No CA usually means no PKINIT.')] },
+    { id: 'forcepw', cat: 'Take over an object', title: 'Reset a user\u2019s password',
+      q: 'Who can reset another user\u2019s password without knowing the current one?',
+      kind: 'acl', targets: ['User'], edges: ['ForceChangePassword', 'AllExtendedRights', 'GenericAll'], twoStep: true,
+      blind: ['A reset locks the real user out and is easy to spot. Get approval before using it.'],
+      confirm: [C("impacket-dacledit -action read -target 'jdoe' " + IMP, 'Reads the target user\u2019s DACL.')] },
+    { id: 'spn', cat: 'Take over an object', title: 'Targeted Kerberoast',
+      q: 'Who can set an SPN on another user, request a ticket for it, and crack that user\u2019s password?',
+      kind: 'acl', targets: ['User'], edges: ['WriteSPN', 'GenericWrite', 'GenericAll'], twoStep: true,
+      blind: ['You still have to crack the hash, so it depends on password strength.', 'Remove the SPN when you\u2019re done.'],
+      confirm: [C(BH + ' get writable --otype useronly --right WRITE --detail', 'Look for servicePrincipalName.')] },
+    { id: 'addmember', cat: 'Take over an object', title: 'Add members to a group',
+      q: 'Who can add themselves or others to a group?',
+      kind: 'acl', targets: ['Group'], edges: ['AddMember', 'AddSelf', 'GenericAll', 'GenericWrite'], twoStep: true,
+      blind: ['New membership only applies to new logons and new TGTs.'],
+      confirm: [C(BH + ' get writable --otype group --right WRITE --detail', 'Look for member.')] },
+    { id: 'gpoedit', cat: 'Take over an object', title: 'Edit a GPO',
+      q: 'Who can modify a Group Policy Object and push code to whatever it applies to?',
+      kind: 'acl', targets: ['GPO'], edges: ['GenericAll', 'GenericWrite'], twoStep: true,
+      blind: ['Check where the GPO is linked (GPLink, Contains) to see which computers and users it reaches.', 'The SYSVOL file permissions also have to allow the change. The graph only shows the AD object.'],
+      confirm: [C(BH + ' get writable --otype gpo --right WRITE --detail', 'Lists the GPOs this account can write.')] },
+    { id: 'gpolink', cat: 'Take over an object', title: 'Link a GPO',
+      q: 'Who can link a GPO to an OU or the domain?',
+      kind: 'acl', targets: ['OU', 'Domain'], edges: ['WriteGPLink', 'GenericAll', 'GenericWrite'], twoStep: true,
+      blind: ['You need a GPO you control to link. Creating one requires Group Policy Creator Owners.'],
+      confirm: [C(BH + ' get writable --otype ou --right WRITE --detail', 'Look for gPLink.')] },
+    { id: 'allcontrol', cat: 'Take over an object', title: 'Everything a principal controls',
+      q: 'Every object-control edge, in one query. Name a principal to see what it can touch.',
+      kind: 'acl', targets: null, edges: ALL_CONTROL, twoStep: false, defaults: { source: 'named' },
+      blind: ['Some rights only matter on certain object types, for example AllExtendedRights on a user versus a computer.'],
+      confirm: [C(BH + ' get writable --detail', 'Everything this account can write, read live.')] },
+
+    { id: 'laps', cat: 'Read secrets', title: 'Read LAPS passwords',
+      q: 'Who can read a computer\u2019s local admin password from LAPS?',
+      kind: 'acl', targets: ['Computer'], edges: ['ReadLAPSPassword', 'AllExtendedRights', 'GenericAll'], twoStep: true, laps: true,
+      blind: ['Windows LAPS can encrypt the password. Then only the configured decryptor can read it, whatever the ACL says.', 'AllExtendedRights and GenericAll only matter on computers that use LAPS.'],
+      confirm: [C(NXL + ' -M laps', 'Tries to read every LAPS password this account can see.')] },
+    { id: 'synclaps', cat: 'Read secrets', title: 'Read LAPS through DirSync',
+      q: 'Who can pull confidential attributes, LAPS included, domain-wide through DirSync?',
+      kind: 'acl', targets: ['Domain'], edges: ['SyncLAPSPassword'], twoStep: false,
+      blind: ['Encrypted Windows LAPS passwords still need the decryptor.'],
+      confirm: [C("Sync-LAPS -LDAPFilter '(samaccountname=PC01$)'", 'PowerShell, from the DirSync project on a domain-joined host.')] },
+    { id: 'gmsa', cat: 'Read secrets', title: 'Read gMSA passwords',
+      q: 'Who can retrieve a group managed service account\u2019s password?',
+      kind: 'acl', targets: ['User'], edges: ['ReadGMSAPassword'], twoStep: false,
+      blind: ['GenericAll or WriteDacl on the gMSA lets you add yourself to its reader list. Run "Everything a principal controls" on it.'],
+      confirm: [C(NXL + ' --gmsa', 'Dumps every gMSA password this account can read.')] },
+    { id: 'dcsync', cat: 'Read secrets', title: 'DCSync',
+      q: 'Who can replicate password hashes from the domain?',
+      kind: 'acl', targets: ['Domain'], edges: ['DCSync', 'AllExtendedRights', 'GenericAll'], twoStep: true,
+      blind: ['DCs and the admin groups have this by design. The filter hides them.'],
+      confirm: [C("impacket-dacledit -action read -target-dn 'DC=corp,DC=local' -principal $USER " + IMP, 'Shows the replication rights this account holds on the domain head.')] },
+
+    { id: 'rbcd-set', cat: 'Delegation', title: 'RBCD already configured',
+      q: 'Who is already allowed to act on behalf of other users to a computer?',
+      kind: 'acl', targets: ['Computer'], edges: ['AllowedToAct'], twoStep: false,
+      blind: ['This is RBCD that already exists. Who can set it up is "Configure RBCD on a computer".'],
+      confirm: [C("impacket-rbcd -action read -delegate-to 'PC01$' " + IMP, 'Reads the RBCD attribute on one computer.'),
+        C('impacket-findDelegation ' + IMP, 'Lists every delegation setting in the domain.')] },
+    { id: 'kcd', cat: 'Delegation', title: 'Constrained delegation',
+      q: 'Which accounts can delegate to services on other hosts?',
+      kind: 'acl', targets: null, edges: ['AllowedToDelegate'], twoStep: false,
+      blind: ['Whether protocol transition is on decides if you need a ticket from the user first.'],
+      confirm: [C('impacket-findDelegation ' + IMP, 'Shows the delegation type, including protocol transition.'),
+        C(NXL + ' --find-delegation', 'The same list from NetExec.')] },
+    { id: 'unconstrained', cat: 'Delegation', title: 'Unconstrained delegation',
+      q: 'Which computers and users, other than DCs, are trusted for unconstrained delegation?',
+      kind: 'unconstrained',
+      blind: ['You need admin on the host and a way to coerce a DC to authenticate to it.'],
+      confirm: [C(NXL + ' --trusted-for-delegation', 'Lists accounts with TRUSTED_FOR_DELEGATION.')] },
+    { id: 'impersonable', cat: 'Delegation', title: 'Admins that can be impersonated',
+      q: 'Which Domain Admins, Enterprise Admins and Administrators can be impersonated through delegation?',
+      kind: 'impersonable',
+      blind: ['Only members of those three groups are checked. Other Tier Zero accounts need the same review.'],
+      confirm: [C(BH + " get object 'Protected Users' --attr member", 'Lists Protected Users members live.')] },
+
+    { id: 'adminto', cat: 'Lateral movement', title: 'Local admin rights',
+      q: 'Who is local administrator on which computers?',
+      kind: 'acl', targets: ['Computer'], edges: ['AdminTo'], twoStep: false,
+      blind: ['Local group collection needs privileges on modern Windows. A missing edge doesn\u2019t prove there\u2019s no access.'],
+      confirm: [C('nxc smb $TARGETS -u $USER -p "$PASS"', 'Pwn3d! next to a host means local admin.')] },
+    { id: 'remote', cat: 'Lateral movement', title: 'RDP, WinRM, DCOM and SQL',
+      q: 'Who can log on remotely or run code through RDP, WinRM, DCOM or SQL Server?',
+      kind: 'acl', targets: ['Computer'], edges: ['CanRDP', 'CanPSRemote', 'ExecuteDCOM', 'SQLAdmin'], twoStep: false,
+      blind: ['An edge means the right exists. It doesn\u2019t mean the port is open.'],
+      confirm: [C('nxc winrm $TARGETS -u $USER -p "$PASS"', 'WinRM access.'), C('nxc rdp $TARGETS -u $USER -p "$PASS"', 'RDP access.')] },
+    { id: 'sessions', cat: 'Lateral movement', title: 'Where admins are logged on',
+      q: 'Which computers had a Domain Admin, Enterprise Admin or Administrator session when data was collected?',
+      kind: 'sessions',
+      blind: ['Sessions are a snapshot from collection time.'],
+      confirm: [C('nxc smb $TARGETS -u $USER -p "$PASS" --loggedon-users', 'Live sessions. Usually needs admin on the target.')] },
+    { id: 'relay', cat: 'Lateral movement', title: 'Coerce and relay targets',
+      q: 'Which computers can be coerced and relayed to SMB, LDAP, LDAPS or AD CS?',
+      kind: 'acl', targets: ['Computer'], edges: ['CoerceAndRelayNTLMToSMB', 'CoerceAndRelayNTLMToLDAP', 'CoerceAndRelayNTLMToLDAPS', 'CoerceAndRelayNTLMToADCS'], twoStep: false, defaults: { source: 'any' },
+      blind: ['These edges only appear if the collector gathered SMB signing and LDAP/EPA data.'],
+      confirm: [C('nxc smb $TARGETS --gen-relay-list relay.txt', 'Hosts without SMB signing.'), C(NXL + ' -M ldap-checker', 'LDAP signing and channel binding on the DC.')] },
+
+    { id: 'adcs', cat: 'Certificates', title: 'AD CS escalation (ESC)',
+      q: 'Who has an AD CS escalation path to the domain?',
+      kind: 'acl', targets: ['Domain'], edges: ['ADCSESC1', 'ADCSESC3', 'ADCSESC4', 'ADCSESC6a', 'ADCSESC6b', 'ADCSESC9a', 'ADCSESC9b', 'ADCSESC10a', 'ADCSESC10b', 'ADCSESC13', 'GoldenCert'], twoStep: false,
+      blind: ['Legacy BloodHound has no AD CS edges.', 'Web enrollment relay (ESC8) and RPC relay (ESC11) need certipy.'],
+      confirm: [C('certipy find -u "$USER@$DOMAIN" -p "$PASS" -dc-ip $DC -vulnerable -stdout', 'Templates and CAs certipy considers vulnerable.')] },
+
+    { id: 'shortest', cat: 'Paths', title: 'Shortest path to domain admin',
+      q: 'From a starting point, what is the shortest path to Domain Admins, Enterprise Admins or Administrators?',
+      kind: 'shortest', defaults: { source: 'owned', output: 'graph' },
+      blind: ['Returns one shortest path per start, not every path.', 'Only uses traversable edges, and only what was collected.'],
+      confirm: [] },
+
+    { id: 'outside', cat: 'Outside the graph', title: 'Checks BloodHound can\u2019t answer', kind: 'info' }
+  ];
+
+  var OUTSIDE = [
+    ['Can I create computer accounts? (MachineAccountQuota)', NXL + ' -M maq'],
+    ['Is LDAP signing or channel binding enforced?', NXL + ' -M ldap-checker'],
+    ['Which hosts don\u2019t require SMB signing?', 'nxc smb $TARGETS --gen-relay-list relay.txt'],
+    ['Is the WebClient service running (HTTP coercion)?', 'nxc smb $TARGETS -u $USER -p "$PASS" -M webdav'],
+    ['Are there passwords in Group Policy Preferences?', 'nxc smb $DC -u $USER -p "$PASS" -M gpp_password'],
+    ['Are there pre-Windows 2000 computer accounts with guessable passwords?', NXL + ' -M pre2k'],
+    ['Which AD CS templates and CAs are vulnerable?', 'certipy find -u "$USER@$DOMAIN" -p "$PASS" -dc-ip $DC -vulnerable -stdout'],
+    ['Can I add DNS records (ADIDNS)?', BH + ' get writable --partition DNS --right CHILD']
+  ];
+
+  function rxEscape(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  function globRx(g) { return g.split('*').map(rxEscape).join('.*'); }
+  function cyStr(s) { return "'" + s.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"; }
+  function nameRx(input, fallback) {
+    var v = (input || '').trim() || fallback;
+    return '(?i)' + globRx(v) + (v.indexOf('@') >= 0 ? '' : '([@.].*)?');
+  }
+  function ownedPred(v, ed) {
+    if (ed === 'legacy') return v + '.owned = true';
+    if (ed === 'ce6') return 'coalesce(' + v + ".system_tags, '') CONTAINS 'owned'";
+    return v + ':Tag_Owned';
+  }
+  function quietPred(v, o) {
+    if (o.noise === 'sids') return 'NOT ' + v + '.objectid =~ ' + cyStr(ADMIN_RID_RE);
+    if (o.noise === 'tier0') {
+      if (o.edition === 'legacy') return 'coalesce(' + v + '.highvalue, false) = false';
+      if (o.edition === 'ce6') return 'NOT coalesce(' + v + ".system_tags, '') CONTAINS 'admin_tier_0'";
+      return 'NOT ' + v + ':Tag_Tier_Zero';
+    }
+    return null;
+  }
+  function where(w) { w = w.filter(Boolean); return w.length ? 'WHERE ' + w.join('\n  AND ') : ''; }
+  function lines() { return Array.prototype.filter.call(arguments, Boolean).join('\n'); }
+  function sourcePred(v, o) {
+    if (o.source === 'named') return v + '.name =~ ' + cyStr(nameRx(o.name, 'YOURNAME'));
+    if (o.source === 'owned') return ownedPred(v, o.edition);
+    if (o.source === 'users' && o.enabledOnly) return v + '.enabled = true';
+    return null;
+  }
+  function targetPreds(v, o) {
+    var w = [];
+    if ((o.targetGlob || '').trim()) w.push(v + '.name =~ ' + cyStr(nameRx(o.targetGlob, '*')));
+    if (o.enabledOnly) w.push('coalesce(' + v + '.enabled, true) = true');
+    return w;
+  }
+
+  function edgesFor(p, o) { return p.edges.concat(p.twoStep && o.twoStep ? TWO_STEP : []); }
+
+  function buildAcl(p, o) {
+    var rel = 'r:' + edgesFor(p, o).join('|');
+    var tl = p.targets && p.targets.length === 1 ? ':' + p.targets[0] : '';
+    var expand = o.source !== 'any';
+    var who = expand ? 'u' : 's';
+    var pat = expand
+      ? '(u' + (o.source === 'users' ? ':User' : '') + ')-[:MemberOf*0..]->(s)-[' + rel + ']->(t' + tl + ')'
+      : '(s)-[' + rel + ']->(t' + tl + ')';
+    var w = [];
+    if (p.targets && p.targets.length > 1) w.push('(' + p.targets.map(function (l) { return 't:' + l; }).join(' OR ') + ')');
+    w.push('s <> t');
+    if (expand) w.push('u <> t');
+    w.push(sourcePred('u', o));
+    if (!expand && o.enabledOnly) w.push('coalesce(s.enabled, true) = true');
+    w.push(quietPred('s', o));
+    w = w.concat(targetPreds('t', o));
+    if (p.laps && o.lapsOnly) w.push('t.haslaps = true');
+    if (o.output === 'graph') return lines('MATCH p=' + pat, where(w), 'RETURN p');
+    var m = 'MATCH ' + pat;
+    if (o.output === 'count') return lines(m, where(w), 'RETURN count(DISTINCT ' + who + ') AS principals, count(DISTINCT t) AS targets');
+    if (o.groupBy === 'target') {
+      return lines(m, where(w),
+        'RETURN t.name AS target, count(DISTINCT ' + who + ') AS principals, collect(DISTINCT type(r)) AS rights, collect(DISTINCT ' + who + '.name) AS principal_names',
+        'ORDER BY principals DESC');
+    }
+    if (expand) {
+      return lines(m, where(w),
+        'RETURN u.name AS principal, count(DISTINCT t) AS targets, collect(DISTINCT type(r)) AS rights, collect(DISTINCT s.name) AS granted_via, collect(DISTINCT t.name) AS target_names',
+        'ORDER BY targets DESC');
+    }
+    return lines(m, where(w),
+      'RETURN s.name AS principal, count(DISTINCT t) AS targets, collect(DISTINCT type(r)) AS rights, collect(DISTINCT t.name) AS target_names',
+      'ORDER BY targets DESC');
+  }
+
+  function buildProp(p, o) {
+    var w = p.where.slice();
+    if (o.enabledOnly) w.push('n.enabled = true');
+    if ((o.targetGlob || '').trim()) w.push('n.name =~ ' + cyStr(nameRx(o.targetGlob, '*')));
+    var m = 'MATCH (n:' + p.label + ')';
+    if (o.output === 'graph') return lines(m, where(w), 'RETURN n');
+    if (o.output === 'count') return lines(m, where(w), 'RETURN count(n) AS ' + p.countAs);
+    return lines(m, where(w), 'RETURN ' + p.cols.map(function (c) { return c[0] + ' AS ' + c[1]; }).join(', '), p.order ? 'ORDER BY ' + p.order : '');
+  }
+
+  function buildUnconstrained(p, o) {
+    var w = ['(n:Computer OR n:User)', 'n.unconstraineddelegation = true'].concat(targetPreds('n', o));
+    var ret = o.output === 'graph' ? 'RETURN n'
+      : o.output === 'count' ? 'RETURN count(n) AS principals'
+      : 'RETURN n.name AS principal, n.enabled AS enabled\nORDER BY principal';
+    return lines('MATCH (n)', where(w),
+      'OPTIONAL MATCH (n)-[:MemberOf]->(dc:Group)', "WHERE dc.objectid =~ '.*-(516|521)$'",
+      'WITH n, dc', 'WHERE dc IS NULL', ret);
+  }
+
+  function buildImpersonable(p, o) {
+    var w = ['g.objectid =~ ' + cyStr(TZ_GROUP_RE), 'coalesce(n.sensitive, false) = false'];
+    if (o.enabledOnly) w.push('n.enabled = true');
+    if ((o.targetGlob || '').trim()) w.push('n.name =~ ' + cyStr(nameRx(o.targetGlob, '*')));
+    var ret = o.output === 'graph' ? 'RETURN n'
+      : o.output === 'count' ? 'RETURN count(n) AS admins'
+      : 'RETURN n.name AS admin, n.admincount AS admincount\nORDER BY admin';
+    return lines('MATCH (n:User)-[:MemberOf*1..]->(g:Group)', where(w),
+      'OPTIONAL MATCH (n)-[:MemberOf*1..]->(pu:Group)', "WHERE pu.objectid ENDS WITH '-525'",
+      'WITH DISTINCT n, pu', 'WHERE pu IS NULL', ret);
+  }
+
+  function buildSessions(p, o) {
+    var pat = '(c:Computer)-[:HasSession]->(u:User)-[:MemberOf*1..]->(g:Group)';
+    var w = ['g.objectid =~ ' + cyStr(TZ_GROUP_RE)].concat(targetPreds('c', o));
+    var hideDC = o.noise !== 'off';
+    if (o.noise === 'tier0') { w.push(quietPred('c', o)); hideDC = false; }
+    var ret, head;
+    if (o.output === 'graph') {
+      head = 'MATCH p=' + pat;
+      ret = hideDC ? ['WITH p, c', 'OPTIONAL MATCH (c)-[:MemberOf]->(dc:Group)', "WHERE dc.objectid =~ '.*-(516|521)$'", 'WITH p, dc', 'WHERE dc IS NULL', 'RETURN p'] : ['RETURN p'];
+    } else {
+      head = 'MATCH ' + pat;
+      var fin = o.output === 'count' ? 'RETURN count(DISTINCT c) AS computers, count(DISTINCT u) AS admins'
+        : 'RETURN c.name AS computer, count(DISTINCT u) AS admins, collect(DISTINCT u.name) AS admin_sessions\nORDER BY admins DESC';
+      ret = hideDC ? ['WITH c, u', 'OPTIONAL MATCH (c)-[:MemberOf]->(dc:Group)', "WHERE dc.objectid =~ '.*-(516|521)$'", 'WITH c, u, dc', 'WHERE dc IS NULL', fin] : [fin];
+    }
+    return lines.apply(null, [head, where(w)].concat(ret));
+  }
+
+  function buildShortest(p, o) {
+    var src = o.source === 'any' ? 'owned' : o.source;
+    var oo = Object.assign({}, o, { source: src });
+    var start = src === 'users' ? '(u:User)' : '(u)';
+    var w = [sourcePred('u', oo), 'g.objectid =~ ' + cyStr(TZ_GROUP_RE), 'u <> g'];
+    var m = 'MATCH p=shortestPath(' + start + '-[:' + TRAVERSABLE.join('|') + '*1..]->(g:Group))';
+    if (o.output === 'graph') return lines(m, where(w), 'RETURN p');
+    if (o.output === 'count') return lines(m, where(w), 'RETURN count(DISTINCT u) AS starts_with_a_path');
+    return lines(m, where(w), 'RETURN u.name AS start, g.name AS reaches, length(p) AS hops', 'ORDER BY hops, start');
+  }
+
+  function build(p, o) {
+    switch (p.kind) {
+      case 'acl': return buildAcl(p, o);
+      case 'prop': return buildProp(p, o);
+      case 'unconstrained': return buildUnconstrained(p, o);
+      case 'impersonable': return buildImpersonable(p, o);
+      case 'sessions': return buildSessions(p, o);
+      case 'shortest': return buildShortest(p, o);
+      default: return '';
+    }
+  }
+
+  root.CQB = { P: P, OUTSIDE: OUTSIDE, EDGE_INFO: EDGE_INFO, TWO_STEP: TWO_STEP, build: build, edgesFor: edgesFor, nameRx: nameRx };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+
+<script>
+(function () {
+  var CQB = window.CQB;
+  var $ = function (id) { return document.getElementById(id); };
+  var KEY = 'cqb-v1';
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
+  var state = Object.assign({
+    id: 'rbcd', edition: 'ce7', source: 'users', name: '', output: 'table', groupBy: 'principal',
+    targetGlob: '', noise: 'sids', twoStep: true, enabledOnly: true, lapsOnly: false, done: {}
+  }, saved);
+  function persist() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { } }
+  function prim(id) { return CQB.P.filter(function (p) { return p.id === id; })[0] || CQB.P[0]; }
+
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function highlight(q) {
+    return q.split(/('(?:\\.|[^'\\])*')/g).map(function (part, i) {
+      if (i % 2) return '<span class="s">' + esc(part) + '</span>';
+      var h = esc(part);
+      h = h.replace(/(\/\/[^\n]*)/g, '<span class="c">$1</span>');
+      h = h.replace(/\b(OPTIONAL MATCH|MATCH|WHERE|AND|OR|NOT|RETURN|WITH|DISTINCT|ORDER BY|DESC|AS|IS NULL|IS NOT NULL|CONTAINS|ENDS WITH)\b/g, '<span class="k">$1</span>');
+      h = h.replace(/\b(count|collect|coalesce|shortestPath|length|type)\(/g, '<span class="f">$1</span>(');
+      h = h.replace(/:([A-Z][A-Za-z0-9_]*)/g, ':<span class="e">$1</span>');
+      h = h.replace(/\|([A-Z][A-Za-z0-9_]*)/g, '|<span class="e">$1</span>');
+      return h;
+    }).join('');
+  }
+
+  function renderRail() {
+    var search = $('checkSearch').value.trim().toLowerCase();
+    var pending = $('pendingOnly').checked;
+    var cats = [];
+    CQB.P.forEach(function (p) { if (cats.indexOf(p.cat) < 0) cats.push(p.cat); });
+    var html = cats.map(function (c) {
+      var items = CQB.P.filter(function (p) { return p.cat === c && (!pending || !state.done[p.id]) && (!search || [p.title,p.cat,p.q,(p.edges || []).join(' ')].join(' ').toLowerCase().includes(search)); }).map(function (p) {
+        var on = p.id === state.id ? ' on' : '';
+        var dn = state.done[p.id] ? ' done' : '';
+        return '<div class="item' + on + dn + '"><input type="checkbox" aria-label="Mark ' + esc(p.title) + ' as checked" data-done="' + p.id + '"' + (state.done[p.id] ? ' checked' : '') + '>' +
+          '<button type="button" data-pick="' + p.id + '"' + (on ? ' aria-current="true"' : '') + '><span class="name">' + esc(p.title) + '</span></button></div>';
+      }).join('');
+      if (!items) return '';
+      return '<div class="cat"><h3>' + esc(c) + '</h3>' + items + '</div>';
+    }).join('');
+    $('rail').innerHTML = html || '<p class="empty">No matching checks. Try another search or turn off the unfinished filter.</p>';
+    var total = CQB.P.length, n = CQB.P.filter(function (p) { return state.done[p.id]; }).length;
+    $('progress').textContent = n + ' of ' + total + ' completed';
+    $('progressBar').max = total; $('progressBar').value = n;
+    $('completeNext').textContent = state.done[state.id] ? 'Next unfinished check →' : 'Mark done & next →';
+  }
+
+  function setRadio(name, v) { var el = document.querySelector('input[name="' + name + '"][value="' + v + '"]'); if (el) el.checked = true; }
+
+  function effectiveOpts(p) {
+    var o = Object.assign({}, state);
+    if (p.kind === 'shortest' && o.source === 'any') o.source = 'owned';
+    return o;
+  }
+
+  function renderOptions(p) {
+    var acl = p.kind === 'acl', shortest = p.kind === 'shortest', info = p.kind === 'info';
+    $('optCard').hidden = info;
+    $('o-source').hidden = !(acl || shortest);
+    $('src-any').parentNode.hidden = shortest;
+    var o = effectiveOpts(p);
+    $('o-name').hidden = !((acl || shortest) && o.source === 'named');
+    $('o-group').hidden = !(acl && o.output === 'table');
+    $('o-noise').hidden = !(acl || p.kind === 'sessions');
+    $('f-two').hidden = !(acl && p.twoStep);
+    $('f-laps').hidden = !p.laps;
+    $('o-target').hidden = shortest;
+    $('targetLbl').textContent = acl ? 'Limit targets to' : p.kind === 'sessions' ? 'Limit computers to' : 'Limit names to';
+    setRadio('source', o.source); setRadio('output', o.output); setRadio('groupBy', state.groupBy);
+    $('name').value = state.name; $('targetGlob').value = state.targetGlob; $('noise').value = state.noise;
+    $('twoStep').checked = state.twoStep; $('enabledOnly').checked = state.enabledOnly; $('lapsOnly').checked = state.lapsOnly;
+    $('edition').value = state.edition;
+  }
+
+  function renderEdges(p) {
+    var box = $('pEdges');
+    if (p.kind !== 'acl') {
+      var txt = { prop: 'Reads node properties. No edges involved.', unconstrained: 'Reads the unconstraineddelegation property and drops members of Domain Controllers and Read-only Domain Controllers.',
+        impersonable: 'Follows MemberOf to the admin groups, then drops accounts marked sensitive or in Protected Users (RID 525).',
+        sessions: 'HasSession from a computer to a user who is, through nested groups, in an admin group.',
+        shortest: 'shortestPath over every traversable AD edge in the BloodHound CE reference.', info: '' }[p.kind];
+      box.innerHTML = txt ? '<p class="optnote">' + esc(txt) + '</p>' : '';
+      return;
+    }
+    var rows = p.edges.map(function (e) { return '<div class="edge"><code>' + e + '</code><span>' + esc(CQB.EDGE_INFO[e] || '') + '</span></div>'; });
+    if (p.twoStep) rows = rows.concat(CQB.TWO_STEP.map(function (e) {
+      return '<div class="edge two' + (state.twoStep ? '' : ' off') + '"><code>' + e + '</code><span>' + esc(CQB.EDGE_INFO[e]) + '</span></div>';
+    }));
+    box.innerHTML = rows.join('');
+  }
+
+  function whereText(p, o) {
+    if (o.output === 'graph') return o.edition === 'legacy' ? 'Paste into the <b>Raw Query</b> box at the bottom of BloodHound.' : 'Paste into <b>Explore \u2192 Cypher</b> in BloodHound.';
+    if (o.edition === 'legacy') return 'Legacy BloodHound only draws graphs. Run tables in the <b>Neo4j Browser</b> (localhost:7474).';
+    return 'Paste into <b>Explore \u2192 Cypher</b>; tables show as rows. The Neo4j Browser works too.';
+  }
+
+  function renderQuery(p) {
+    var o = effectiveOpts(p);
+    var q = CQB.build(p, o);
+    $('query').innerHTML = highlight(q);
+    $('where').innerHTML = whereText(p, o); $('pasteHelp').innerHTML = whereText(p, o);
+    var needsName = (p.kind === 'acl' || p.kind === 'shortest') && o.source === 'named' && !state.name.trim();
+    $('copyQ').disabled = needsName; $('downloadQ').disabled = needsName;
+    $('name').setAttribute('aria-invalid', String(needsName));
+    $('querySummary').textContent = [o.output === 'count' ? 'Counts' : o.output === 'graph' ? 'Graph' : 'Table', (p.kind === 'acl' || p.kind === 'shortest') ? ({users:'All users + groups',any:'Direct rights holders',named:state.name || 'Enter a name',owned:'Owned principals'}[o.source]) : 'Matching objects', p.kind !== 'shortest' && state.targetGlob ? 'Target: ' + state.targetGlob : ''].filter(Boolean).join(' · ');
+    var warn = '';
+    if (p.kind === 'acl' && o.source === 'users' && o.output === 'graph') warn = 'Graph output for every user can draw thousands of paths when a broad group holds the right. Use Table or Counts for the full list, or "Whoever holds the right" to see the groups.';
+    if ((p.kind === 'acl' || p.kind === 'shortest') && o.source === 'named' && !(state.name || '').trim()) warn = 'Enter a principal name in Set your scope to enable copying or saving this query.';
+    if (p.id === 'adcs' && o.edition === 'legacy') warn = 'Legacy BloodHound has no AD CS edges, so this returns nothing. Use certipy.';
+    if (p.kind === 'shortest' && o.source === 'users') warn = 'Shortest paths from every user can be slow on big domains. Name a principal or use Owned when you can.';
+    $('qwarn').hidden = !warn; $('qwarn').textContent = warn;
+    return q;
+  }
+
+  function renderSide(p) {
+    $('blind').innerHTML = (p.blind || []).map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('');
+    var cmds = p.confirm || [];
+    $('cmds').innerHTML = cmds.length ? cmds.map(function (c, i) {
+      return '<div class="cmd"><div class="row"><pre>' + esc(c.cmd) + '</pre><button class="btn" type="button" data-copycmd="' + i + '">Copy</button></div><span class="note">' + esc(c.note) + '</span></div>';
+    }).join('') : '<p class="optnote">Nothing to run. Follow the path the query returns, then confirm each hop with the check for that edge.</p>';
+  }
+
+  function renderInfo() {
+    $('ngBody').innerHTML = CQB.OUTSIDE.map(function (r) {
+      var isCmd = /^(nxc|certipy|bloodyAD|impacket)/.test(r[1]);
+      return '<tr><td>' + esc(r[0]) + '</td><td>' + (isCmd ? '<code>' + esc(r[1]) + '</code>' : esc(r[1])) + '</td></tr>';
+    }).join('');
+  }
+
+  function render() {
+    var p = prim(state.id);
+    var info = p.kind === 'info';
+    $('work').hidden = info; $('infoView').hidden = !info;
+    renderRail();
+    if (info) { renderInfo(); return; }
+    $('pCat').textContent = p.cat; $('pTitle').textContent = p.title; $('pQ').textContent = p.q;
+    renderEdges(p); renderOptions(p); renderQuery(p); renderSide(p);
+  }
+
+  function pick(id) {
+    var p = prim(id);
+    state.id = p.id;
+    if (p.defaults && p.defaults.source) state.source = p.defaults.source;
+    if (p.defaults && p.defaults.output) state.output = p.defaults.output;
+    persist();
+    if (location.hash !== '#' + p.id) history.replaceState(null, '', '#' + p.id);
+    render();
+  }
+
+  function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, 1600); }
+  function copy(text, okMsg, fallbackEl) {
+    var done = function () { toast(okMsg); };
+    var fail = function () {
+      if (fallbackEl) { var r = document.createRange(); r.selectNodeContents(fallbackEl); var s = getSelection(); s.removeAllRanges(); s.addRange(r); toast('Selected. Press Ctrl+C to copy.'); }
+      else toast('Copy was blocked here.');
+    };
+    try { navigator.clipboard.writeText(text).then(done, fail); } catch (e) { fail(); }
+  }
+
+  function pack() {
+    var out = ['// BloodHound Cypher Builder query pack', '// Edition: ' + $('edition').selectedOptions[0].textContent + ', hide: ' + $('noise').selectedOptions[0].textContent, ''];
+    CQB.P.forEach(function (p) {
+      if (p.kind === 'info') return;
+      var base = Object.assign({}, state, { source: p.kind === 'shortest' ? 'owned' : (p.defaults && p.defaults.source) || 'users', groupBy: 'principal', targetGlob: '' });
+      out.push('// ' + p.cat + ' / ' + p.title + ' (table)');
+      out.push(CQB.build(p, Object.assign({}, base, { output: 'table' })) + ';', '');
+      out.push('// ' + p.cat + ' / ' + p.title + ' (graph)');
+      out.push(CQB.build(p, Object.assign({}, base, { output: 'graph', source: p.kind === 'acl' ? 'any' : base.source })) + ';', '');
+    });
+    return out.join('\n');
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-pick]');
+    if (t) { pick(t.getAttribute('data-pick')); return; }
+    var c = e.target.closest('[data-copycmd]');
+    if (c) { var pre = c.parentNode.querySelector('pre'); copy(pre.textContent, 'Command copied', pre); }
+  });
+  document.addEventListener('change', function (e) {
+    var el = e.target;
+    if (el.hasAttribute('data-done')) { state.done[el.getAttribute('data-done')] = el.checked; persist(); renderRail(); return; }
+    if (el.name === 'source') state.source = el.value;
+    else if (el.name === 'output') state.output = el.value;
+    else if (el.name === 'groupBy') state.groupBy = el.value;
+    else if (el.id === 'noise') state.noise = el.value;
+    else if (el.id === 'edition') state.edition = el.value;
+    else if (el.id === 'twoStep') state.twoStep = el.checked;
+    else if (el.id === 'enabledOnly') state.enabledOnly = el.checked;
+    else if (el.id === 'lapsOnly') state.lapsOnly = el.checked;
+    else return;
+    persist(); render();
+  });
+  ['name', 'targetGlob'].forEach(function (id) {
+    $(id).addEventListener('input', function (e) { state[id] = e.target.value; persist(); renderQuery(prim(state.id)); });
+  });
+  $('copyQ').addEventListener('click', function () { copy($('query').textContent, 'Query copied', $('query')); });
+  $('copyAll').addEventListener('click', function () { copy(pack(), 'All ' + (CQB.P.length - 1) + ' checks copied as a .cypher pack'); });
+  window.addEventListener('hashchange', function () { var id = location.hash.slice(1); if (id && id !== state.id) pick(id); });
+
+  function download(text, filename) {
+    var url = URL.createObjectURL(new Blob([text], {type:'text/plain;charset=utf-8'}));
+    var a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000); toast('Saved ' + filename);
+  }
+  $('checkSearch').addEventListener('input', renderRail);
+  $('pendingOnly').addEventListener('change', renderRail);
+  document.addEventListener('keydown', function(e){
+    if(e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){e.preventDefault();$('checkSearch').focus();}
+    if(e.key === 'Escape' && e.target === $('checkSearch')){$('checkSearch').value='';renderRail();}
+  });
+  $('downloadQ').onclick = function(){download($('query').textContent, state.id + '.cypher');};
+  $('downloadPack').onclick = function(){download(pack(), 'bloodhound-checks.cypher');};
+  $('resetOptions').onclick = function(){
+    var p = prim(state.id);
+    Object.assign(state,{source:'users',name:'',output:'table',groupBy:'principal',targetGlob:'',noise:'sids',twoStep:true,enabledOnly:true,lapsOnly:false},p.defaults || {});
+    persist();render();toast('Options reset for this check');
+  };
+  $('completeNext').onclick = function(){
+    state.done[state.id]=true;persist();
+    var start=CQB.P.findIndex(function(p){return p.id===state.id;});
+    var ordered=CQB.P.slice(start+1).concat(CQB.P.slice(0,start));
+    var next=ordered.find(function(p){return p.kind!=='info' && !state.done[p.id];});
+    if(next){pick(next.id);toast('Check completed. Next check opened.');}
+    else {renderRail();toast('All query checks completed.');}
+  };
+  function theme(){
+    if(state.theme && state.theme !== 'system') document.documentElement.dataset.theme=state.theme;
+    else delete document.documentElement.dataset.theme;
+    $('themeToggle').textContent='Theme: '+(state.theme || 'system');
+  }
+  $('themeToggle').onclick=function(){var modes=['system','light','dark'];state.theme=modes[(modes.indexOf(state.theme || 'system')+1)%3];persist();theme();};
+  theme();
+  var h = location.hash.slice(1);
+  if (h && CQB.P.some(function (p) { return p.id === h; })) state.id = h;
+  render();
+})();
+</script>
+
+</body>
+</html>
